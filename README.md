@@ -36,19 +36,6 @@ local → !abc1 (5.2dB) → !abc2 (3.1dB) → destination
 
 Traceroutes share the 30-second rate limit with text messages — the button is rate-limited automatically.
 
-## Local server (optional)
-
-If your radio is attached to a different machine on your network, run the included bridge server:
-
-```bash
-npm install
-node server.mjs
-```
-
-This serves the console over HTTP and bridges the serial port over WebSocket. Access it from any browser on your network at the printed URL.
-
-> **Note:** WebSerial only works from HTTPS or localhost. The GitHub Pages URL above is HTTPS. The local server serves HTTP — WebSerial works there via localhost, and the WebSocket bridge handles connections from other machines.
-
 ## `meshtastic-webserial.js` — the library
 
 A single ES module (~500 lines, zero dependencies) that implements the Meshtastic serial protocol.

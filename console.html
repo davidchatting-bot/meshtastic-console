@@ -597,7 +597,12 @@ setInterval(() => {
   for (const [nodeId, node] of client.nodes) {
     const el = document.getElementById('lh-' + nodeId);
     if (el) { el.textContent = timeAgo(node.lastHeard); el.className = lhClass(node.lastHeard); }
+    if (node.lastHeard) {
+      const tr = document.getElementById('r-' + nodeId);
+      if (tr) tr.dataset.lastHeard = node.lastHeard;
+    }
   }
+  if (sortCol === 'lastHeard') reSort();
 }, 5_000);
 
 // ── Event log ──────────────────────────────────────────────────────────────────

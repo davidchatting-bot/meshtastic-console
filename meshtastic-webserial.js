@@ -137,14 +137,19 @@ function readLenDelim(view, pos) {
 
 /**
  * Generic protobuf message decoder.
- * schema: { [fieldNumber]: { name, type } }
+ * schema: { [fieldNumber]: { name, type, repeated?, subSchema? } }
  * type: 'uint32'|'int32'|'bool'|'string'|'bytes'|'float'|'fixed32'|'sfixed32'|'message'
- * For 'message', also provide: subSchema
+ * Set repeated:true for repeated fields; packed encoding is handled automatically.
  */
 function decodeMessage(bytes, schema) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const result = {};
   let pos = 0;
+
+  const push = (def, v) => {
+    if (def.repeated) { (result[def.name] ??= []).push(v); }
+    else { result[def.name] = v; }
+  };
 
   while (pos < bytes.byteLength) {
     const tagResult = readVarint(view, pos);
@@ -157,44 +162,54 @@ function decodeMessage(bytes, schema) {
 
     switch (wireType) {
       case 0: { // varint
-        const r = readVarint(view, pos);
-        pos = r.pos;
+        const r = readVarint(view, pos); pos = r.pos;
         if (def) {
-          result[def.name] = def.type === 'bool' ? r.value !== 0 : r.value;
+          // int32 negative values arrive as large unsigned varints; reinterpret as signed
+          const v = def.type === 'bool'  ? r.value !== 0
+                  : def.type === 'int32' ? (r.value | 0)
+                  : r.value;
+          push(def, v);
         }
         break;
       }
       case 1: { // 64-bit
-        const r = readFixed64(view, pos);
-        pos = r.pos;
-        if (def) result[def.name] = r.value;
+        const r = readFixed64(view, pos); pos = r.pos;
+        if (def) push(def, r.value);
         break;
       }
       case 2: { // length-delimited
-        const r = readLenDelim(view, pos);
-        pos = r.pos;
-        if (def) {
-          if (def.type === 'string') {
-            result[def.name] = new TextDecoder().decode(r.bytes);
-          } else if (def.type === 'bytes') {
-            result[def.name] = r.bytes;
-          } else if (def.type === 'message') {
-            result[def.name] = decodeMessage(r.bytes, def.subSchema);
-          } else {
-            result[def.name] = r.bytes;
+        const r = readLenDelim(view, pos); pos = r.pos;
+        if (!def) break;
+        if (def.type === 'string') {
+          push(def, new TextDecoder().decode(r.bytes));
+        } else if (def.type === 'bytes') {
+          push(def, r.bytes);
+        } else if (def.type === 'message') {
+          push(def, decodeMessage(r.bytes, def.subSchema));
+        } else if (def.repeated) {
+          // Packed repeated field — unpack all values from the byte run
+          const pv = new DataView(r.bytes.buffer, r.bytes.byteOffset, r.bytes.byteLength);
+          let pp = 0;
+          while (pp < r.bytes.byteLength) {
+            if (def.type === 'fixed32') {
+              (result[def.name] ??= []).push(pv.getUint32(pp, true)); pp += 4;
+            } else { // int32 / uint32
+              const vr = readVarint(pv, pp); pp = vr.pos;
+              (result[def.name] ??= []).push(def.type === 'int32' ? (vr.value | 0) : vr.value);
+            }
           }
+        } else {
+          result[def.name] = r.bytes;
         }
         break;
       }
       case 5: { // 32-bit
         if (!def) { pos += 4; break; }
-        if (def.type === 'float') {
-          const r = readFloat(view, pos); result[def.name] = r.value; pos = r.pos;
-        } else if (def.type === 'sfixed32') {
-          const r = readSFixed32(view, pos); result[def.name] = r.value; pos = r.pos;
-        } else {
-          const r = readFixed32(view, pos); result[def.name] = r.value; pos = r.pos;
-        }
+        const v = def.type === 'float'   ? readFloat(view, pos).value
+                : def.type === 'sfixed32'? readSFixed32(view, pos).value
+                :                          readFixed32(view, pos).value;
+        pos += 4;
+        push(def, v);
         break;
       }
       default:
@@ -302,6 +317,14 @@ const S_FROM_RADIO = {
   13: { name: 'metadata',       type: 'message', subSchema: S_DEVICE_METADATA },
 };
 
+// SNR values in RouteDiscovery are stored as int32 in units of 0.25 dB
+const S_ROUTE_DISCOVERY = {
+  1: { name: 'route',      type: 'fixed32', repeated: true },
+  2: { name: 'snrTowards', type: 'int32',   repeated: true },
+  3: { name: 'routeBack',  type: 'fixed32', repeated: true },
+  4: { name: 'snrBack',    type: 'int32',   repeated: true },
+};
+
 // ─── Frame builder ────────────────────────────────────────────────────────────
 
 function buildFrame(protoBytes) {
@@ -340,6 +363,23 @@ export function makeTextFrame(text, to = BROADCAST_NUM, channel = 0) {
     fLen(4, dataBytes),
     fFixed32(6, packetId),
     fVarint(9, 3),    // hopLimit = 3
+  );
+  return buildFrame(fLen(1, packetBytes));
+}
+
+export function makeTracerouteFrame(destNum, channel = 0) {
+  const dataBytes = concat(
+    fVarint(1, PortNum.TRACEROUTE_APP),
+    fLen(2, new Uint8Array(0)), // empty RouteDiscovery — filled in by hops
+    fVarint(3, 1),              // want_response = true
+  );
+  const packetId = (Math.random() * 0xFFFFFFFE + 1) >>> 0;
+  const packetBytes = concat(
+    fFixed32(2, destNum),
+    fVarint(3, channel),
+    fLen(4, dataBytes),
+    fFixed32(6, packetId),
+    fVarint(9, 7),  // hop_limit = 7 (allows full route discovery)
   );
   return buildFrame(fLen(1, packetBytes));
 }
@@ -452,6 +492,22 @@ export class MeshtasticClient extends EventTarget {
   /** Send a heartbeat to keep the connection alive. */
   async sendHeartbeat() {
     await this._write(makeHeartbeatFrame());
+  }
+
+  /**
+   * Send a traceroute request to a node. Shares the 30-second send rate limit.
+   * Fires a 'traceroute' event when the response arrives.
+   * @param {number} destNum  Destination node number
+   * @param {number} [channel=0]
+   */
+  async sendTraceroute(destNum, channel = 0) {
+    const now = Date.now();
+    const elapsed = now - this._lastSendTime;
+    if (elapsed < MIN_SEND_INTERVAL_MS) {
+      await sleep(MIN_SEND_INTERVAL_MS - elapsed);
+    }
+    await this._write(makeTracerouteFrame(destNum, channel));
+    this._lastSendTime = Date.now();
   }
 
   /**
@@ -640,6 +696,22 @@ export class MeshtasticClient extends EventTarget {
       case PortNum.ROUTING_APP:
         this._emit('routing', annotated);
         break;
+      case PortNum.TRACEROUTE_APP: {
+        try {
+          const rd = decodeMessage(decoded.payload ?? new Uint8Array(0), S_ROUTE_DISCOVERY);
+          // SNR values are in 0.25 dB units
+          const snrTowards = (rd.snrTowards ?? []).map(v => v / 4);
+          const snrBack    = (rd.snrBack    ?? []).map(v => v / 4);
+          this._emit('traceroute', {
+            ...annotated,
+            route:      rd.route      ?? [],
+            snrTowards,
+            routeBack:  rd.routeBack  ?? [],
+            snrBack,
+          });
+        } catch { this._emit('traceroute', { ...annotated, route: [], snrTowards: [] }); }
+        break;
+      }
       default:
         this._emit('data', annotated);
     }
@@ -685,4 +757,5 @@ export const _proto = {
   buildFrame,
   S_FROM_RADIO, S_MESH_PACKET, S_NODE_INFO, S_USER, S_POSITION,
   S_DEVICE_METRICS, S_MY_NODE_INFO, S_DEVICE_METADATA, S_DATA,
+  S_ROUTE_DISCOVERY,
 };

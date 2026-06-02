@@ -1,0 +1,25 @@
+{
+  "name": "meshtastic-webserial",
+  "version": "1.0.0",
+  "description": "",
+  "main": "meshtastic-webserial.js",
+  "directories": {
+    "test": "test"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node test/test-encoding.mjs",
+    "test:hw": "node test/test-integration.mjs",
+    "test:hw:send": "node test/test-integration.mjs --send"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "serialport": "^13.0.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}

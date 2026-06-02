@@ -129,6 +129,24 @@ td { padding: 5px 8px; white-space: nowrap; vertical-align: middle; }
 .poslink:hover { text-decoration: underline; }
 .nopos { color: var(--border); }
 
+/* traceroute button + inline result */
+.trace-btn {
+  background: none; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--muted); font-size: 10px; padding: 1px 6px; cursor: pointer;
+  font-family: inherit; white-space: nowrap;
+}
+.trace-btn:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+.trace-btn:disabled { opacity: .4; cursor: default; }
+.trace-result {
+  font-size: 10px; color: var(--muted);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.trace-hop  { color: var(--cyan); }
+.trace-snr  { color: var(--muted); font-size: 9px; }
+.trace-arrow{ color: var(--border); }
+.trace-dest { color: var(--green); font-weight: 600; }
+.trace-timeout { color: var(--orange); }
+
 #empty-msg { text-align: center; padding: 48px; color: var(--muted); }
 
 /* ── Event log ───────────────────────────────────────────────────────────── */
@@ -159,6 +177,7 @@ td { padding: 5px 8px; white-space: nowrap; vertical-align: middle; }
 .lk.ROUTING  { background: rgba(139,148,158,.2); color: var(--muted);  }
 .lk.ENC      { background: rgba(139,148,158,.12);color: var(--muted);  }
 .lk.LOG      { background: rgba(139,148,158,.08);color: var(--muted);  }
+.lk.TRACE    { background: rgba(88,166,255,.15); color: var(--cyan);   }
 .lf { color: var(--cyan); font-family: monospace; font-size: 11px; }
 .lb { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -223,6 +242,7 @@ td { padding: 5px 8px; white-space: nowrap; vertical-align: middle; }
         <th data-col="alt"                  >Alt</th>
         <th data-col="battery"              >Battery</th>
         <th data-col="uptime"               >Uptime</th>
+        <th style="width:1%">Traceroute</th>
       </tr>
     </thead>
     <tbody id="tbody">
@@ -240,7 +260,7 @@ td { padding: 5px 8px; white-space: nowrap; vertical-align: middle; }
 </div>
 
 <script type="module">
-import { MeshtasticClient, nodeNumToId, BROADCAST_NUM, PortNum }
+import { MeshtasticClient, nodeNumToId, idToNodeNum, BROADCAST_NUM, PortNum }
   from './meshtastic-webserial.js';
 
 // ── Hardware model names ───────────────────────────────────────────────────────
@@ -293,6 +313,8 @@ function posOf(node) {
 let client = null, connected = false;
 let sortCol = 'lastHeard', sortDir = -1;
 const fresh = new Set();
+// nodeId → { timer, resolve } for pending traceroutes
+const pendingTrace = new Map();
 
 // ── Connect / disconnect ───────────────────────────────────────────────────────
 const btn = document.getElementById('btn');
@@ -374,11 +396,99 @@ function wireEvents(c) {
     if (!d.decoded)
       addLog('ENC', d.fromId,
         `→${esc(d.toId)}  ch=${d.channel}  snr=${d.rxSnr?.toFixed(1) ?? '?'}dB  rssi=${d.rxRssi ?? '?'}dBm`);
+    // Update lastHeard + SNR from live packet (nodeInfo may not update immediately)
     const node = client.nodes.get(d.fromId);
-    if (node) renderRow(d.fromId, node);
+    if (node) {
+      if (d.rxTime)           node.lastHeard = d.rxTime;
+      if (d.rxSnr  != null)   node.snr       = d.rxSnr;
+      renderRow(d.fromId, node);
+    }
+  });
+
+  c.on('traceroute', ({ detail: d }) => {
+    const pending = pendingTrace.get(d.fromId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pendingTrace.delete(d.fromId);
+    }
+    showTraceResult(d.fromId, d.route, d.snrTowards);
+    // Log entry
+    const hops = formatRouteShort(d.fromId, d.route, d.snrTowards);
+    addLog('TRACE', d.fromId, hops);
   });
 
   c.on('error', ({ detail: d }) => addLog('LOG', null, 'Error: ' + (d.error?.message ?? d.error)));
+}
+
+// ── Traceroute ─────────────────────────────────────────────────────────────────
+
+function nodeName(num) {
+  const id  = nodeNumToId(num);
+  const n   = client?.nodes.get(id);
+  return n?.user?.shortName ? `${id} (${esc(n.user.shortName)})` : id;
+}
+
+function formatRouteShort(destId, route, snrs) {
+  // Build: local → hop1 (snr) → hop2 (snr) → dest
+  const localId = client?.myInfo ? nodeNumToId(client.myInfo.myNodeNum) : 'local';
+  const hops    = (route ?? []).map((num, i) => {
+    const snr = snrs?.[i] != null ? ` <span class="trace-snr">${snrs[i].toFixed(1)}dB</span>` : '';
+    return `<span class="trace-hop">${nodeName(num)}</span>${snr}`;
+  });
+  const dest = `<span class="trace-dest">${destId}</span>`;
+  return [`<span class="trace-hop">${localId}</span>`, ...hops, dest]
+    .join(' <span class="trace-arrow">→</span> ');
+}
+
+function showTraceResult(destId, route, snrs) {
+  const tr = document.getElementById('r-' + destId);
+  if (!tr) return;
+  const cell = tr.querySelector('.trace-cell');
+  if (!cell) return;
+  cell.innerHTML = `<div class="trace-result">${formatRouteShort(destId, route, snrs)}</div>`;
+}
+
+function showTracePending(destId) {
+  const tr = document.getElementById('r-' + destId);
+  if (!tr) return;
+  const cell = tr.querySelector('.trace-cell');
+  if (cell) cell.innerHTML = `<span class="trace-result"><span class="spinner"></span></span>`;
+}
+
+function showTraceTimeout(destId) {
+  const tr = document.getElementById('r-' + destId);
+  if (!tr) return;
+  const cell = tr.querySelector('.trace-cell');
+  if (cell) cell.innerHTML =
+    `<span class="trace-timeout">timeout</span> <button class="trace-btn" data-nid="${destId}" title="Retry traceroute">⟿ retry</button>`;
+  tr.querySelector('.trace-btn')?.addEventListener('click', onTraceClick);
+}
+
+async function onTraceClick(e) {
+  const btn    = e.currentTarget;
+  const destId = btn.dataset.nid;
+  if (!destId || !connected || pendingTrace.has(destId)) return;
+
+  const destNum = idToNodeNum(destId);
+  showTracePending(destId);
+
+  const timer = setTimeout(() => {
+    pendingTrace.delete(destId);
+    showTraceTimeout(destId);
+    addLog('TRACE', destId, '<span style="color:var(--orange)">timeout — no response</span>');
+  }, 30_000);
+
+  pendingTrace.set(destId, { timer });
+  addLog('TRACE', destId, 'sending traceroute…');
+
+  try {
+    await client.sendTraceroute(destNum);
+  } catch (err) {
+    clearTimeout(timer);
+    pendingTrace.delete(destId);
+    showTraceTimeout(destId);
+    addLog('TRACE', destId, 'send failed: ' + err.message);
+  }
 }
 
 // ── Table rendering ────────────────────────────────────────────────────────────
@@ -420,6 +530,9 @@ function renderRow(nodeId, node) {
     ? `<span class="${battClass(batt)}">${battBar(batt)} ${batt}%</span>`
     : batt === 101 ? `<span class="bg">⚡ USB</span>` : '—';
 
+  // Preserve traceroute cell content across re-renders
+  const existingTrace = tr.querySelector('.trace-cell')?.innerHTML ?? '';
+
   tr.innerHTML = `
     <td>${node.isFavorite ? '<span class="fav">★</span>' : ''}</td>
     <td class="nid" title="${nodeId}">${isLocal ? '⬡ ' : ''}${nodeId}</td>
@@ -433,7 +546,11 @@ function renderRow(nodeId, node) {
     <td style="color:var(--muted)">${altHtml}</td>
     <td>${battHtml}</td>
     <td style="color:var(--muted);font-size:10px">${uptimeStr(dm?.uptimeSeconds)}</td>
+    <td class="trace-cell" style="min-width:80px">${existingTrace || (isLocal ? '' : `<button class="trace-btn" data-nid="${nodeId}" title="Send traceroute to ${nodeId}">⟿ trace</button>`)}</td>
   `;
+
+  // Wire up the trace button (may have been recreated)
+  tr.querySelector('.trace-btn')?.addEventListener('click', onTraceClick);
 }
 
 // ── Sort ───────────────────────────────────────────────────────────────────────
@@ -481,7 +598,7 @@ setInterval(() => {
     const el = document.getElementById('lh-' + nodeId);
     if (el) { el.textContent = timeAgo(node.lastHeard); el.className = lhClass(node.lastHeard); }
   }
-}, 15_000);
+}, 5_000);
 
 // ── Event log ──────────────────────────────────────────────────────────────────
 function addLog(type, from, body) {

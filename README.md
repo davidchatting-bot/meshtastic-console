@@ -16,23 +16,25 @@ No install, no build step, no account needed.
 |--------|--------|
 | Node ID / Name | NodeInfo broadcasts |
 | Hardware | HW model from NodeInfo |
-| Hops | Distance in hops from your radio |
+| Hops | Distance in hops — from NodeInfo broadcasts, updated by traceroute results |
 | SNR | Signal-to-noise ratio (dB), updated on every received packet |
-| Last Heard | Timestamp from received packets, live clock |
+| Last Heard | Updated from received packets and traceroute results, re-sorts live |
 | Position | GPS coordinates with OpenStreetMap link |
 | Battery | Device metrics telemetry |
 | Uptime | Device metrics telemetry |
 | Traceroute | On-demand — click **⟿ trace** on any row |
 
-Click any column header to sort. The event log at the bottom shows all received packets in real time.
+Click any column header to sort. When sorted by Last Heard the order updates automatically every 5 seconds. The event log at the bottom shows all received packets in real time.
 
 ## Traceroute
 
-Click **⟿ trace** on a node row to send a traceroute request. Each intermediate node appends its ID and SNR to the route; the destination replies and the full path is displayed inline:
+Click **⟿ trace** on a node row to send a traceroute request. Each intermediate node appends its ID and SNR to the route; the destination replies and the full path is displayed inline in the row and in the event log:
 
 ```
 local → !abc1 (5.2dB) → !abc2 (3.1dB) → destination
 ```
+
+When a result arrives, every node in the route has its **Hops** and **Last Heard** columns updated immediately — intermediate nodes were active at the moment the packet passed through them.
 
 Traceroutes share the 30-second rate limit with text messages — the button is rate-limited automatically.
 

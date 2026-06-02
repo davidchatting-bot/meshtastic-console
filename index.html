@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meshtastic Console</title>
+<style>
+:root {
+  --bg:     #0d1117;
+  --bg2:    #161b22;
+  --bg3:    #21262d;
+  --border: #30363d;
+  --text:   #c9d1d9;
+  --muted:  #8b949e;
+  --green:  #3fb950;
+  --cyan:   #58a6ff;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --red:    #f85149;
+  --purple: #bc8cff;
+  --accent: #238636;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+h1 { font-size: 14px; font-weight: 600; color: var(--green); letter-spacing: .05em; white-space: nowrap; }
+#device-info {
+  display: flex; gap: 14px; flex: 1;
+  font-size: 11px; color: var(--muted);
+  align-items: center; min-width: 0;
+}
+.chip {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+}
+.chip.live { border-color: var(--green); color: var(--green); }
+.spinner {
+  display: inline-block; width: 11px; height: 11px;
+  border: 2px solid var(--border); border-top-color: var(--green);
+  border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+button {
+  background: var(--accent); color: #fff;
+  border: 1px solid #2ea043; border-radius: 6px;
+  padding: 6px 16px; font-family: inherit; font-size: 12px;
+  cursor: pointer; white-space: nowrap; transition: background .1s;
+}
+button:hover  { background: #2ea043; }
+button:disabled { background: var(--bg3); border-color: var(--border); color: var(--muted); cursor: default; opacity: .5; }
+button.disc   { background: #6e2426; border-color: var(--red); }
+button.disc:hover { background: #b62324; }
+button.sm     { padding: 2px 10px; font-size: 10px; background: var(--bg3); border-color: var(--border); color: var(--muted); }
+button.sm:hover { color: var(--text); }
+
+/* ── Stats bar ───────────────────────────────────────────────────────────── */
+#stats {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 5px 16px; display: flex; gap: 24px;
+  font-size: 11px; color: var(--muted); flex-shrink: 0; align-items: center;
+}
+#stats b { color: var(--text); font-weight: 500; }
+
+/* ── Node table ──────────────────────────────────────────────────────────── */
+#nodes { flex: 1; overflow: auto; min-height: 0; }
+table  { width: 100%; border-collapse: collapse; font-size: 11px; }
+thead th {
+  position: sticky; top: 0; background: var(--bg2);
+  border-bottom: 2px solid var(--border);
+  padding: 6px 8px; text-align: left;
+  font-weight: 600; color: var(--muted);
+  white-space: nowrap; cursor: pointer; user-select: none;
+}
+thead th:hover { color: var(--text); }
+thead th.asc::after  { content: ' ↑'; color: var(--cyan); }
+thead th.desc::after { content: ' ↓'; color: var(--cyan); }
+tbody tr { border-bottom: 1px solid var(--border); transition: background .4s; }
+tbody tr:hover { background: var(--bg3); }
+tbody tr.fresh      { background: rgba(63,185,80,.1); }
+tbody tr.local-node { background: rgba(88,166,255,.06); }
+td { padding: 5px 8px; white-space: nowrap; vertical-align: middle; }
+
+.nid   { color: var(--cyan); font-family: monospace; font-size: 11px; }
+.nname { font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.stag  { background: var(--bg3); border-radius: 3px; padding: 1px 5px; font-size: 10px; color: var(--muted); }
+.hw    { color: var(--muted); font-size: 10px; }
+.fav   { color: var(--yellow); }
+.mqtt  { color: var(--purple); font-size: 10px; margin-left: 4px; }
+
+.h0 { color: var(--green); font-weight: 700; }
+.h1 { color: var(--green); }
+.h2 { color: var(--yellow); }
+.h3 { color: var(--orange); }
+.h9 { color: var(--red); }
+
+.sg { color: var(--green); }
+.so { color: var(--yellow); }
+.sw { color: var(--orange); }
+.sb { color: var(--red); }
+
+.lh   { color: var(--muted); font-size: 10px; }
+.lh.r { color: var(--green); }
+.lh.s { color: var(--red); }
+
+.bg { color: var(--green); }
+.by { color: var(--yellow); }
+.br { color: var(--red); }
+
+.poslink { color: var(--cyan); text-decoration: none; }
+.poslink:hover { text-decoration: underline; }
+.nopos { color: var(--border); }
+
+#empty-msg { text-align: center; padding: 48px; color: var(--muted); }
+
+/* ── Event log ───────────────────────────────────────────────────────────── */
+#log-wrap {
+  height: 175px; flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+#log-hdr {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 4px 16px; font-size: 11px; font-weight: 600; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
+}
+#log { flex: 1; overflow-y: auto; padding: 2px 0; }
+.le {
+  padding: 2px 16px; font-size: 11px;
+  display: grid; grid-template-columns: 88px 68px 104px 1fr;
+  gap: 8px; align-items: center;
+}
+.le:hover { background: var(--bg3); }
+.lt { color: var(--muted); font-size: 10px; }
+.lk { border-radius: 3px; padding: 1px 6px; font-size: 10px; font-weight: 600; text-align: center; }
+.lk.TEXT     { background: rgba(63,185,80,.2);   color: var(--green);  }
+.lk.POS      { background: rgba(88,166,255,.2);  color: var(--cyan);   }
+.lk.TELEM    { background: rgba(210,153,34,.2);  color: var(--yellow); }
+.lk.NODEINFO { background: rgba(188,140,255,.2); color: var(--purple); }
+.lk.ROUTING  { background: rgba(139,148,158,.2); color: var(--muted);  }
+.lk.ENC      { background: rgba(139,148,158,.12);color: var(--muted);  }
+.lk.LOG      { background: rgba(139,148,158,.08);color: var(--muted);  }
+.lf { color: var(--cyan); font-family: monospace; font-size: 11px; }
+.lb { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── No-WebSerial overlay ────────────────────────────────────────────────── */
+#no-serial {
+  display: none; position: fixed; inset: 0;
+  background: rgba(13,17,23,.95);
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px; font-size: 14px; z-index: 9;
+}
+#no-serial.show { display: flex; }
+#no-serial p { color: var(--muted); max-width: 420px; text-align: center; line-height: 1.7; }
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+</head>
+<body>
+
+<div id="no-serial">
+  <h2 style="color:var(--red)">WebSerial not available</h2>
+  <p>This page requires the <strong>WebSerial API</strong>.<br>
+     Please use <strong>Chrome</strong> or <strong>Edge</strong> — Firefox and Safari don't support it.<br><br>
+     The page must also be served over <strong>HTTPS</strong> or <strong>localhost</strong>.</p>
+</div>
+
+<header>
+  <h1>⬡ Meshtastic Console</h1>
+  <div id="device-info">
+    <span id="di-spin" style="display:none"><span class="spinner"></span> Connecting…</span>
+    <span id="di-nid"  style="display:none" class="chip live"></span>
+    <span id="di-name" style="display:none"></span>
+    <span id="di-fw"   style="display:none; color:var(--muted)">FW: <b id="di-fw-v" style="color:var(--text)"></b></span>
+    <span id="di-ch"   style="display:none; color:var(--muted)">Ch util: <b id="di-ch-v" style="color:var(--text)"></b></span>
+  </div>
+  <button id="btn">Connect to Radio</button>
+</header>
+
+<div id="stats">
+  <span>Nodes in DB: <b id="s-total">—</b></span>
+  <span>Heard &lt;24h: <b id="s-heard">—</b></span>
+  <span>Direct (0 hops): <b id="s-direct">—</b></span>
+  <span>With GPS: <b id="s-gps">—</b></span>
+</div>
+
+<div id="nodes">
+  <table>
+    <thead>
+      <tr>
+        <th data-col="fav"      title="Favourite">★</th>
+        <th data-col="nodeId"               >Node ID</th>
+        <th data-col="longName"             >Name</th>
+        <th data-col="shortName"            >Short</th>
+        <th data-col="hwModel"              >Hardware</th>
+        <th data-col="hopsAway" title="Hops away from this node">Hops</th>
+        <th data-col="snr"      title="Received Signal-to-Noise Ratio (dB)">SNR</th>
+        <th data-col="lastHeard"            >Last Heard</th>
+        <th data-col="lat"                  >Position</th>
+        <th data-col="alt"                  >Alt</th>
+        <th data-col="battery"              >Battery</th>
+        <th data-col="uptime"               >Uptime</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr id="empty-row"><td colspan="12"><div id="empty-msg">Connect to a radio to see nodes</div></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="log-wrap">
+  <div id="log-hdr">
+    <span>Event Log</span>
+    <button class="sm" id="log-clear">Clear</button>
+  </div>
+  <div id="log"></div>
+</div>
+
+<script type="module">
+import { MeshtasticClient, nodeNumToId, BROADCAST_NUM, PortNum }
+  from './meshtastic-webserial.js';
+
+// ── Hardware model names ───────────────────────────────────────────────────────
+const HW = {
+  4:'TBEAM', 7:'T-Echo', 9:'T1000-E', 10:'Nano-G1', 13:'RPi-Pico',
+  23:'nRF52840', 27:'RAK4631', 31:'TLora-T3S3', 33:'Nano-G2',
+  36:'WIO-WM1110', 43:'Heltec-V3', 44:'Heltec-WSL-V3',
+  52:'Heltec-V2.0', 53:'Heltec-V2.1', 54:'TBeam-S3',
+  55:'RAK3172', 56:'WIO-E5', 60:'Station-G2',
+  72:'T1000-E', 76:'XIAO-S3', 78:'TLora-V2.1', 79:'TLora-C6',
+  255:'Private',
+};
+const hw = n => HW[n] ?? (n ? `HW-${n}` : '—');
+
+// ── Formatting ─────────────────────────────────────────────────────────────────
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function timeAgo(u) {
+  if (!u) return '—';
+  const s = Math.floor(Date.now()/1000) - u;
+  if (s < 0)    return 'now';
+  if (s < 60)   return `${s}s`;
+  if (s < 3600) return `${Math.floor(s/60)}m`;
+  if (s < 86400)return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+  return `${Math.floor(s/86400)}d`;
+}
+function lhClass(u) {
+  if (!u) return 'lh';
+  const s = Math.floor(Date.now()/1000) - u;
+  return s < 300 ? 'lh r' : s > 86400 ? 'lh s' : 'lh';
+}
+const snrClass  = v => v == null ? '' : v > 5 ? 'sg' : v > -5 ? 'so' : v > -15 ? 'sw' : 'sb';
+const hopsClass = h => h == null ? '' : ['h0','h1','h2','h3'][h] ?? 'h9';
+const battClass = b => b == null||b>100 ? '' : b >= 60 ? 'bg' : b >= 30 ? 'by' : 'br';
+const battBar   = b => b > 100 ? '⚡' : b >= 80 ? '█' : b >= 50 ? '▊' : b >= 25 ? '▌' : '▏';
+function uptimeStr(s) {
+  if (!s) return '—';
+  const d=Math.floor(s/86400), h=Math.floor((s%86400)/3600), m=Math.floor((s%3600)/60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+function posOf(node) {
+  const p = node.position;
+  if (!p) return null;
+  const lat = p.latitudeI / 1e7, lon = p.longitudeI / 1e7;
+  if (lat === 0 && lon === 0) return null;
+  return { lat, lon, alt: p.altitude ?? null };
+}
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let client = null, connected = false;
+let sortCol = 'lastHeard', sortDir = -1;
+const fresh = new Set();
+
+// ── Connect / disconnect ───────────────────────────────────────────────────────
+const btn = document.getElementById('btn');
+
+btn.addEventListener('click', async () => {
+  if (connected) { await client.disconnect(); return; }
+
+  let port;
+  try { port = await navigator.serial.requestPort(); }
+  catch { return; }
+
+  btn.disabled = true;
+  show('di-spin');
+  client = new MeshtasticClient();
+  wireEvents(client);
+
+  try {
+    await client.connect(port, 20_000);
+  } catch (e) {
+    addLog('LOG', null, 'Connect failed: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = 'Connect to Radio';
+    hide('di-spin');
+  }
+});
+
+document.getElementById('log-clear').onclick = () => { document.getElementById('log').innerHTML = ''; };
+
+// ── Events ─────────────────────────────────────────────────────────────────────
+function wireEvents(c) {
+  c.on('connected', ({ detail: d }) => {
+    connected = true;
+    btn.disabled = false; btn.textContent = 'Disconnect'; btn.classList.add('disc');
+    hide('di-spin');
+    addLog('LOG', null, `Connected — ${d.nodeCount} nodes`);
+    renderAll(); updateStats();
+  });
+
+  c.on('disconnected', () => {
+    connected = false;
+    btn.disabled = false; btn.textContent = 'Connect to Radio'; btn.classList.remove('disc');
+    ['di-nid','di-name','di-fw','di-ch'].forEach(hide);
+    addLog('LOG', null, 'Disconnected');
+  });
+
+  c.on('myinfo',   ({ detail: d }) => { setText('di-nid', nodeNumToId(d.myNodeNum)); show('di-nid'); });
+  c.on('metadata', ({ detail: d }) => { setText('di-fw-v', d.firmwareVersion); show('di-fw'); });
+
+  c.on('nodeinfo', ({ detail: d }) => {
+    flash(d.nodeId); renderRow(d.nodeId, d.node); updateStats(); updateHeader();
+  });
+
+  c.on('text', ({ detail: d }) => {
+    const dest = d.toId === 'broadcast' ? 'all' : d.toId;
+    addLog('TEXT', d.fromId, `→${esc(dest)}  ch${d.channel}: "${esc(d.text)}"`);
+  });
+
+  c.on('position', ({ detail: d }) => {
+    const p = d.position;
+    addLog('POS', d.fromId,
+      p ? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${p.altitude != null ? `  alt=${p.altitude}m` : ''}` : '?');
+    const node = client.nodes.get(d.fromId);
+    if (node) { flash(d.fromId); renderRow(d.fromId, node); }
+  });
+
+  c.on('telemetry', ({ detail: d }) => {
+    const node = client.nodes.get(d.fromId);
+    const dm = node?.deviceMetrics;
+    addLog('TELEM', d.fromId,
+      dm ? `batt=${dm.batteryLevel}%  ch_util=${dm.channelUtilization?.toFixed(1)}%  tx=${dm.airUtilTx?.toFixed(2)}%` : '');
+    if (node) { flash(d.fromId); renderRow(d.fromId, node); }
+    updateStats();
+  });
+
+  c.on('nodeinfo_packet', ({ detail: d }) => addLog('NODEINFO', d.fromId, esc(d.user?.longName ?? '?')));
+  c.on('routing',         ({ detail: d }) => addLog('ROUTING',  d.fromId, `→${d.toId}`));
+
+  c.on('packet', ({ detail: d }) => {
+    if (!d.decoded)
+      addLog('ENC', d.fromId,
+        `→${esc(d.toId)}  ch=${d.channel}  snr=${d.rxSnr?.toFixed(1) ?? '?'}dB  rssi=${d.rxRssi ?? '?'}dBm`);
+    const node = client.nodes.get(d.fromId);
+    if (node) renderRow(d.fromId, node);
+  });
+
+  c.on('error', ({ detail: d }) => addLog('LOG', null, 'Error: ' + (d.error?.message ?? d.error)));
+}
+
+// ── Table rendering ────────────────────────────────────────────────────────────
+function renderAll() {
+  document.getElementById('tbody').innerHTML = '';
+  for (const [id, node] of client.nodes) renderRow(id, node);
+  reSort();
+}
+
+function renderRow(nodeId, node) {
+  const tbody = document.getElementById('tbody');
+  document.getElementById('empty-row')?.remove();
+
+  let tr = document.getElementById('r-' + nodeId);
+  if (!tr) { tr = document.createElement('tr'); tr.id = 'r-' + nodeId; tbody.appendChild(tr); }
+
+  const isLocal = client.myInfo && node.num === client.myInfo.myNodeNum;
+  const pos = posOf(node), dm = node.deviceMetrics, batt = dm?.batteryLevel;
+
+  tr.className = [fresh.has(nodeId) ? 'fresh' : '', isLocal ? 'local-node' : ''].join(' ').trim();
+  tr.dataset.lastHeard = node.lastHeard ?? 0;
+  tr.dataset.hopsAway  = node.hopsAway  ?? 99;
+  tr.dataset.snr       = node.snr       ?? -999;
+  tr.dataset.longName  = (node.user?.longName ?? '').toLowerCase();
+  tr.dataset.lat       = pos?.lat ?? -999;
+  tr.dataset.battery   = batt ?? -1;
+  tr.dataset.uptime    = dm?.uptimeSeconds ?? 0;
+
+  const posHtml  = pos
+    ? `<a class="poslink"
+         href="https://www.openstreetmap.org/?mlat=${pos.lat.toFixed(5)}&mlon=${pos.lon.toFixed(5)}&zoom=14"
+         target="_blank">${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)}</a>`
+    : `<span class="nopos">—</span>`;
+  const altHtml  = pos && pos.alt != null ? `${pos.alt}m` : '—';
+  const snrHtml  = node.snr != null ? `<span class="${snrClass(node.snr)}">${node.snr.toFixed(1)}</span>` : '—';
+  const hopsHtml = node.hopsAway != null
+    ? `<span class="${hopsClass(node.hopsAway)}">${isLocal ? '⬡' : node.hopsAway}</span>` : '—';
+  const battHtml = batt != null && batt <= 100
+    ? `<span class="${battClass(batt)}">${battBar(batt)} ${batt}%</span>`
+    : batt === 101 ? `<span class="bg">⚡ USB</span>` : '—';
+
+  tr.innerHTML = `
+    <td>${node.isFavorite ? '<span class="fav">★</span>' : ''}</td>
+    <td class="nid" title="${nodeId}">${isLocal ? '⬡ ' : ''}${nodeId}</td>
+    <td class="nname" title="${esc(node.user?.longName ?? '')}">${esc(node.user?.longName ?? '?')}${node.viaMqtt ? '<span class="mqtt">MQTT</span>' : ''}</td>
+    <td><span class="stag">${esc(node.user?.shortName ?? '?')}</span></td>
+    <td class="hw">${esc(hw(node.user?.hwModel))}</td>
+    <td style="text-align:center">${hopsHtml}</td>
+    <td style="text-align:right">${snrHtml}</td>
+    <td id="lh-${nodeId}" class="${lhClass(node.lastHeard)}">${timeAgo(node.lastHeard)}</td>
+    <td>${posHtml}</td>
+    <td style="color:var(--muted)">${altHtml}</td>
+    <td>${battHtml}</td>
+    <td style="color:var(--muted);font-size:10px">${uptimeStr(dm?.uptimeSeconds)}</td>
+  `;
+}
+
+// ── Sort ───────────────────────────────────────────────────────────────────────
+document.querySelectorAll('thead th[data-col]').forEach(th =>
+  th.addEventListener('click', () => {
+    sortDir = th.dataset.col === sortCol ? -sortDir : -1;
+    sortCol = th.dataset.col;
+    reSort();
+  })
+);
+function reSort() {
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.classList.remove('asc','desc');
+    if (th.dataset.col === sortCol) th.classList.add(sortDir > 0 ? 'asc' : 'desc');
+  });
+  const tbody = document.getElementById('tbody');
+  [...tbody.querySelectorAll('tr[id^="r-"]')]
+    .sort((a, b) => sortCol === 'longName'
+      ? sortDir * a.dataset.longName.localeCompare(b.dataset.longName)
+      : sortDir * ((+a.dataset[sortCol] ?? 0) - (+b.dataset[sortCol] ?? 0)))
+    .forEach(r => tbody.appendChild(r));
+}
+
+// ── Stats / header ─────────────────────────────────────────────────────────────
+function updateStats() {
+  if (!client) return;
+  const nodes = [...client.nodes.values()], now = Math.floor(Date.now()/1000);
+  setText('s-total',  nodes.length);
+  setText('s-heard',  nodes.filter(n => n.lastHeard && now - n.lastHeard < 86400).length);
+  setText('s-direct', nodes.filter(n => n.hopsAway === 0).length);
+  setText('s-gps',    nodes.filter(n => posOf(n)).length);
+}
+function updateHeader() {
+  if (!client) return;
+  const local = client.myInfo ? client.nodes.get(nodeNumToId(client.myInfo.myNodeNum)) : null;
+  if (local?.user?.longName) { setText('di-name', local.user.longName); show('di-name'); }
+  const ch = local?.deviceMetrics?.channelUtilization;
+  if (ch != null) { setText('di-ch-v', ch.toFixed(1) + '%'); show('di-ch'); }
+}
+
+// ── Live "Last Heard" clock ────────────────────────────────────────────────────
+setInterval(() => {
+  if (!client) return;
+  for (const [nodeId, node] of client.nodes) {
+    const el = document.getElementById('lh-' + nodeId);
+    if (el) { el.textContent = timeAgo(node.lastHeard); el.className = lhClass(node.lastHeard); }
+  }
+}, 15_000);
+
+// ── Event log ──────────────────────────────────────────────────────────────────
+function addLog(type, from, body) {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'le';
+  div.innerHTML = `
+    <span class="lt">${new Date().toISOString().slice(11,23)}</span>
+    <span class="lk ${type}">${type}</span>
+    <span class="lf">${from ? esc(from) : '—'}</span>
+    <span class="lb">${body}</span>`;
+  const atBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 24;
+  el.appendChild(div);
+  while (el.children.length > 250) el.removeChild(el.firstChild);
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+// ── DOM helpers ────────────────────────────────────────────────────────────────
+const show    = id => { const e = document.getElementById(id); if (e) e.style.display = ''; };
+const hide    = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
+const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+function flash(nodeId) {
+  fresh.add(nodeId);
+  document.getElementById('r-' + nodeId)?.classList.add('fresh');
+  setTimeout(() => {
+    fresh.delete(nodeId);
+    document.getElementById('r-' + nodeId)?.classList.remove('fresh');
+  }, 3000);
+}
+
+// ── WebSerial availability check ───────────────────────────────────────────────
+if (!('serial' in navigator)) {
+  document.getElementById('no-serial').classList.add('show');
+  btn.disabled = true;
+}
+</script>
+</body>
+</html>

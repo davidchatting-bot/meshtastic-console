@@ -412,9 +412,25 @@ function wireEvents(c) {
       pendingTrace.delete(d.fromId);
     }
     showTraceResult(d.fromId, d.route, d.snrTowards);
-    // Log entry
-    const hops = formatRouteShort(d.fromId, d.route, d.snrTowards);
-    addLog('TRACE', d.fromId, hops);
+    addLog('TRACE', d.fromId, formatRouteShort(d.fromId, d.route, d.snrTowards));
+
+    // Update hopsAway for every node the route reveals.
+    // route[] may or may not include the destination as its last element —
+    // check by comparing the last entry to the responding node's number.
+    const destNum = idToNodeNum(d.fromId);
+    const destInRoute = d.route.length > 0 && d.route[d.route.length - 1] === destNum;
+
+    d.route.forEach((num, i) => {
+      const nodeId = nodeNumToId(num);
+      const node   = client.nodes.get(nodeId);
+      if (node) { node.hopsAway = i + 1; renderRow(nodeId, node); }
+    });
+
+    // Update the destination itself if it wasn't the last route entry
+    if (!destInRoute) {
+      const destNode = client.nodes.get(d.fromId);
+      if (destNode) { destNode.hopsAway = d.route.length + 1; renderRow(d.fromId, destNode); }
+    }
   });
 
   c.on('error', ({ detail: d }) => addLog('LOG', null, 'Error: ' + (d.error?.message ?? d.error)));

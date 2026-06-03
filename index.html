@@ -531,19 +531,38 @@ function renderRow(nodeId, node) {
   const isLocal = client.myInfo && node.num === client.myInfo.myNodeNum;
   const pos = posOf(node), dm = node.deviceMetrics, batt = dm?.batteryLevel;
 
+  let estimatedPos = null;
+  if (isLocal && !pos) {
+    const now = Math.floor(Date.now() / 1000);
+    const recentPositions = [...client.nodes.values()]
+      .filter(n => n !== node && n.lastHeard && (now - n.lastHeard) < 6 * 3600)
+      .map(posOf).filter(Boolean);
+    if (recentPositions.length > 0) {
+      estimatedPos = {
+        lat: recentPositions.reduce((s, p) => s + p.lat, 0) / recentPositions.length,
+        lon: recentPositions.reduce((s, p) => s + p.lon, 0) / recentPositions.length,
+      };
+    }
+  }
+
+  const displayPos = pos ?? estimatedPos;
   tr.className = [fresh.has(nodeId) ? 'fresh' : '', isLocal ? 'local-node' : ''].join(' ').trim();
   tr.dataset.lastHeard = node.lastHeard ?? 0;
   tr.dataset.hopsAway  = node.hopsAway  ?? 99;
   tr.dataset.snr       = node.snr       ?? -999;
   tr.dataset.longName  = (node.user?.longName ?? '').toLowerCase();
-  tr.dataset.lat       = pos?.lat ?? -999;
+  tr.dataset.lat       = displayPos?.lat ?? -999;
   tr.dataset.battery   = batt ?? -1;
   tr.dataset.uptime    = dm?.uptimeSeconds ?? 0;
 
-  const posHtml  = pos
+  const posHtml = pos
     ? `<a class="poslink"
          href="https://www.openstreetmap.org/?mlat=${pos.lat.toFixed(5)}&mlon=${pos.lon.toFixed(5)}&zoom=14"
          target="_blank">${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)}</a>`
+    : estimatedPos
+    ? `<a class="poslink" style="color:var(--muted)"
+         href="https://www.openstreetmap.org/?mlat=${estimatedPos.lat.toFixed(5)}&mlon=${estimatedPos.lon.toFixed(5)}&zoom=14"
+         target="_blank" title="Estimated position (mean of nearby nodes)">~${estimatedPos.lat.toFixed(5)}, ~${estimatedPos.lon.toFixed(5)}</a>`
     : `<span class="nopos">—</span>`;
   const altHtml  = pos && pos.alt != null ? `${pos.alt}m` : '—';
   const snrHtml  = node.snr != null ? `<span class="${snrClass(node.snr)}">${node.snr.toFixed(1)}</span>` : '—';
@@ -595,6 +614,8 @@ function reSort() {
       ? sortDir * a.dataset.longName.localeCompare(b.dataset.longName)
       : sortDir * ((+a.dataset[sortCol] ?? 0) - (+b.dataset[sortCol] ?? 0)))
     .forEach(r => tbody.appendChild(r));
+  const localRow = tbody.querySelector('tr.local-node');
+  if (localRow) tbody.prepend(localRow);
 }
 
 // ── Stats / header ─────────────────────────────────────────────────────────────

@@ -536,7 +536,7 @@ function renderRow(nodeId, node) {
     const now = Math.floor(Date.now() / 1000);
     const recentPositions = [...client.nodes.values()]
       .filter(n => n !== node && n.lastHeard && (now - n.lastHeard) < 6 * 3600)
-      .map(posOf).filter(Boolean);
+      .map(posOf).filter(p => p && isFinite(p.lat) && isFinite(p.lon));
     if (recentPositions.length > 0) {
       estimatedPos = {
         lat: recentPositions.reduce((s, p) => s + p.lat, 0) / recentPositions.length,

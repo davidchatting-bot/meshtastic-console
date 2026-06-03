@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#161b22"/>
+  <!-- Hexagon nodes -->
+  <circle cx="256" cy="140" r="28" fill="none" stroke="#3fb950" stroke-width="14"/>
+  <circle cx="145" cy="203" r="28" fill="none" stroke="#3fb950" stroke-width="14"/>
+  <circle cx="145" cy="332" r="28" fill="none" stroke="#3fb950" stroke-width="14"/>
+  <circle cx="256" cy="395" r="28" fill="none" stroke="#3fb950" stroke-width="14"/>
+  <circle cx="367" cy="332" r="28" fill="none" stroke="#3fb950" stroke-width="14"/>
+  <circle cx="367" cy="203" r="28" fill="none" stroke="#3fb950" stroke-width="14"/>
+  <!-- Edges -->
+  <line x1="256" y1="168" x2="173" y2="189" stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+  <line x1="145" y1="231" x2="145" y2="304" stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+  <line x1="173" y1="346" x2="232" y2="374" stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+  <line x1="280" y1="374" x2="339" y2="346" stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+  <line x1="367" y1="304" x2="367" y2="231" stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+  <line x1="339" y1="189" x2="280" y2="168" stroke="#3fb950" stroke-width="8" stroke-linecap="round"/>
+  <!-- Cross edges -->
+  <line x1="173" y1="220" x2="339" y2="220" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-dasharray="12 10"/>
+  <line x1="173" y1="315" x2="256" y2="168" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-dasharray="12 10" opacity="0.4"/>
+</svg>

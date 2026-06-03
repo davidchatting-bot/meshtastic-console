@@ -382,7 +382,10 @@ function wireEvents(c) {
     addLog('POS', d.fromId,
       p ? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${p.altitude != null ? `  alt=${p.altitude}m` : ''}` : '?');
     const node = client.nodes.get(d.fromId);
-    if (node) { flash(d.fromId); renderRow(d.fromId, node); }
+    if (node) {
+      if (p) node.position = p;
+      flash(d.fromId); renderRow(d.fromId, node);
+    }
   });
 
   c.on('telemetry', ({ detail: d }) => {

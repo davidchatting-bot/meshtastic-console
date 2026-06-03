@@ -543,7 +543,10 @@ export class MeshtasticClient extends EventTarget {
         this._processChunk(value);
       }
     } catch (e) {
-      if (this._running) this._emit('error', { error: e });
+      if (this._running) {
+        this._emit('error', { error: e });
+        this._emit('disconnected', {});
+      }
     } finally {
       this._reader.releaseLock();
       this._running = false;
